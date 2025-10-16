@@ -1,0 +1,18 @@
+[package]
+name = "nurcemal-ne-halin"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nokhwa = { version = "0.10", features = ["input-native"] }
+opencv = { version = "0.92", features = ["clang-runtime"] }
+ort = { version = "2.0.0-rc.10", features = ["download-binaries"] }
+egui = "0.28"
+eframe = { version = "0.28", features = ["default"] }
+image = "0.25"
+tokio = { version = "1", features = ["full"] }
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+ndarray = "0.16"
+rodio = "0.19"
