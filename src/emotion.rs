@@ -11,14 +11,8 @@ use tracing::{error, warn};
 /// Represents a detected face region in a frame
 #[derive(Debug, Clone)]
 pub struct FaceRegion {
-    /// Bounding box of the face
-    #[allow(dead_code)]
-    pub rect: Rect,
     /// Cropped face image data (grayscale)
     pub image_data: Vec<u8>,
-    /// Width of the face region
-    #[allow(dead_code)]
-    pub width: u32,
     /// Height of the face region
     pub height: u32,
 }
@@ -118,9 +112,7 @@ impl FaceDetector {
         })?;
 
         Ok(FaceRegion {
-            rect,
             image_data: face_data.to_vec(),
-            width: rect.width as u32,
             height: rect.height as u32,
         })
     }
@@ -136,14 +128,6 @@ impl FacePreprocessor {
     pub fn new() -> Self {
         Self {
             target_size: (260, 260),
-        }
-    }
-
-    /// Creates a FacePreprocessor with custom target size
-    #[allow(dead_code)]
-    pub fn with_size(width: u32, height: u32) -> Self {
-        Self {
-            target_size: (width, height),
         }
     }
 
@@ -187,12 +171,6 @@ impl FacePreprocessor {
         let normalized: Vec<f32> = data.iter().map(|&pixel| pixel as f32 / 255.0).collect();
         Ok(normalized)
     }
-
-    /// Returns the target size for preprocessing
-    #[allow(dead_code)]
-    pub fn target_size(&self) -> (u32, u32) {
-        self.target_size
-    }
 }
 
 impl Default for FacePreprocessor {
@@ -208,8 +186,6 @@ use std::sync::{Arc, Mutex};
 /// Emotion classifier using ONNX Runtime
 pub struct EmotionClassifier {
     session: Arc<Mutex<Session>>,
-    #[allow(dead_code)]
-    input_shape: Vec<i64>,
 }
 
 impl EmotionClassifier {
@@ -229,7 +205,6 @@ impl EmotionClassifier {
 
         Ok(Self {
             session: Arc::new(Mutex::new(session)),
-            input_shape,
         })
     }
 
@@ -361,12 +336,6 @@ impl EmotionAnalyzer {
         })
     }
 
-    /// Sets the confidence threshold for emotion detection
-    #[allow(dead_code)]
-    pub fn set_confidence_threshold(&mut self, threshold: f32) {
-        self.confidence_threshold = threshold.clamp(0.0, 1.0);
-    }
-
     /// Processes a frame to detect and classify emotions
     pub async fn process_frame(&self, frame: Frame) -> Result<Option<EmotionResult>> {
         // Detect faces
@@ -418,11 +387,5 @@ impl EmotionAnalyzer {
         }
 
         Ok(Some(result))
-    }
-
-    /// Returns the current confidence threshold
-    #[allow(dead_code)]
-    pub fn confidence_threshold(&self) -> f32 {
-        self.confidence_threshold
     }
 }

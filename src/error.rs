@@ -8,10 +8,6 @@ pub enum EmotionDetectorError {
     #[error("Camera initialization failed: {0}")]
     CameraInit(String),
 
-    #[error("Camera access denied")]
-    #[allow(dead_code)]
-    CameraAccessDenied,
-
     #[error("Frame processing failed: {0}")]
     FrameProcessing(String),
 

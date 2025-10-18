@@ -174,11 +174,15 @@ impl ImageManager {
         ];
 
         for (emotion, basename) in emotion_files {
-            // Load image
-            let image_path = pack_dir.join(format!("{basename}.png"));
-            if image_path.exists() {
-                if let Ok(img) = ImageData::load_from_path(&image_path) {
-                    images.insert(emotion, img);
+            // Load image - check for multiple formats (priority order)
+            let image_extensions = ["png", "jpg", "jpeg"];
+            for ext in image_extensions {
+                let image_path = pack_dir.join(format!("{basename}.{ext}"));
+                if image_path.exists() {
+                    if let Ok(img) = ImageData::load_from_path(&image_path) {
+                        images.insert(emotion, img);
+                    }
+                    break; // Use first found format
                 }
             }
 
@@ -238,14 +242,6 @@ impl ImageManager {
         }
     }
 
-    /// Gets the current pack name
-    #[allow(dead_code)]
-    pub fn get_current_pack_name(&self) -> Option<String> {
-        self.packs
-            .get(self.current_pack_index)
-            .map(|p| p.name.clone())
-    }
-
     /// Plays the audio for a specific emotion from the current pack
     pub fn play_audio_for_emotion(&mut self, emotion: EmotionState) {
         // Stop current audio if playing
@@ -266,11 +262,5 @@ impl ImageManager {
                 }
             }
         }
-    }
-
-    /// Legacy method - no longer needed with pack system
-    #[allow(dead_code)]
-    pub fn rotate_if_needed(&mut self) -> bool {
-        false
     }
 }

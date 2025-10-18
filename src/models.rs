@@ -11,9 +11,6 @@ pub struct Frame {
     pub width: u32,
     /// Frame height in pixels
     pub height: u32,
-    /// Timestamp when the frame was captured
-    #[allow(dead_code)]
-    pub timestamp: Instant,
 }
 
 impl Frame {
@@ -23,20 +20,7 @@ impl Frame {
             data,
             width,
             height,
-            timestamp: Instant::now(),
         }
-    }
-
-    /// Returns the total number of pixels in the frame
-    #[allow(dead_code)]
-    pub fn pixel_count(&self) -> usize {
-        (self.width * self.height) as usize
-    }
-
-    /// Validates that the data length matches the expected size for RGB format
-    #[allow(dead_code)]
-    pub fn is_valid(&self) -> bool {
-        self.data.len() == (self.width * self.height * 3) as usize
     }
 }
 
@@ -48,46 +32,8 @@ pub enum EmotionState {
     Angry,
     Surprised,
     Scared,
-    #[allow(dead_code)]
-    Thinking,
-    #[allow(dead_code)]
-    Relaxed,
     Neutral,
     Disgusted,
-}
-
-impl EmotionState {
-    /// Returns all possible emotion states
-    #[allow(dead_code)]
-    pub fn all() -> Vec<EmotionState> {
-        vec![
-            EmotionState::Happy,
-            EmotionState::Sad,
-            EmotionState::Angry,
-            EmotionState::Surprised,
-            EmotionState::Scared,
-            EmotionState::Thinking,
-            EmotionState::Relaxed,
-            EmotionState::Neutral,
-            EmotionState::Disgusted,
-        ]
-    }
-
-    /// Returns the directory name for this emotion's images
-    #[allow(dead_code)]
-    pub fn directory_name(&self) -> &'static str {
-        match self {
-            EmotionState::Happy => "happy",
-            EmotionState::Sad => "sad",
-            EmotionState::Angry => "angry",
-            EmotionState::Surprised => "surprised",
-            EmotionState::Scared => "scared",
-            EmotionState::Thinking => "thinking",
-            EmotionState::Relaxed => "relaxed",
-            EmotionState::Neutral => "neutral",
-            EmotionState::Disgusted => "disgusted",
-        }
-    }
 }
 
 impl std::fmt::Display for EmotionState {
@@ -98,8 +44,6 @@ impl std::fmt::Display for EmotionState {
             EmotionState::Angry => write!(f, "Angry"),
             EmotionState::Surprised => write!(f, "Surprised"),
             EmotionState::Scared => write!(f, "Scared"),
-            EmotionState::Thinking => write!(f, "Thinking"),
-            EmotionState::Relaxed => write!(f, "Relaxed"),
             EmotionState::Neutral => write!(f, "Neutral"),
             EmotionState::Disgusted => write!(f, "Disgusted"),
         }
@@ -113,9 +57,6 @@ pub struct EmotionResult {
     pub emotion: EmotionState,
     /// Confidence level (0.0 to 1.0)
     pub confidence: f32,
-    /// Timestamp when the emotion was detected
-    #[allow(dead_code)]
-    pub timestamp: Instant,
 }
 
 impl EmotionResult {
@@ -124,7 +65,6 @@ impl EmotionResult {
         Self {
             emotion,
             confidence,
-            timestamp: Instant::now(),
         }
     }
 
