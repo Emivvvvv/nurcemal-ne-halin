@@ -19,18 +19,20 @@ Overview & Architecture
 
 <!-- pause -->
 
-- Because Sefa abi asked for it there was no other reason
+- Because Sefa abi asked for it :D
 
 <!-- pause -->
 
-- And it is fun since you handle everything yourself
+- And it is fun since you handle everything by yourself
 
 <!-- pause -->
 
-**Why Multi-Threading?**
-- UI stays smooth at 60 FPS
-- AI processing (100-200ms) runs in background
-- No freezing or blocking
+**A small funfact:**
+
+<!-- pause -->
+
+- This presentation is also running on a terminal with a Rust crate :)
+
 
 <!-- end_slide -->
 
@@ -63,6 +65,11 @@ Stage 1: OpenCV & Haar Cascade
 
 **How it works:**
 
+<!-- column_layout: [1, 1] -->
+
+<!-- column: 0 -->
+
+
 ```
 ┌─────┬─────┐     ┌─────────┐     ┌──┬──┬──┐
 │ ■■■ │ □□□ │     │ ■■■■■■■ │     │■■│□□│■■│
@@ -71,9 +78,14 @@ Stage 1: OpenCV & Haar Cascade
   Eye Region        Nose Bridge      Eye-Nose-Eye
 ```
 
-![image:width:50%](./haar_cascade.png)
+<!-- column: 1 -->
+
+![image:width:70%](./haar_cascade.png)
 
 <!-- pause -->
+
+<!-- column_layout: [1] -->
+<!-- column: 0 -->
 
 **Cascade of Classifiers:**
 ```
@@ -89,6 +101,26 @@ Face Detected! ✓
 ```
 
 Most non-face regions fail early and are rejected immediately.
+
+<!-- end_slide -->
+
+Stage 1: OpenCV & Haar Cascade
+---
+
+**Key Parameters We Use:**
+
+```rust
+detect_multi_scale(
+    &gray_image,
+    scale_factor: 1.1,      // How much to shrink image each pass
+    min_neighbors: 5,       // Overlapping detections needed
+    min_size: 40x40,        // Smallest face to detect
+)
+```
+
+- **Scale Factor (1.1)**: Shrink image by 10% each iteration to detect faces at different distances
+- **Min Neighbors (5)**: Need 5 overlapping detections to confirm it's a real face (reduces false positives)
+- **Min Size (40x40 pixels)**: Ignore anything smaller (speeds up processing, filters noise)
 
 <!-- end_slide -->
 
@@ -136,7 +168,13 @@ HSEmotion Model & CNN Architecture
 
 **How CNNs Recognize Emotions:**
 
-![image:width:50%](./cnn.png)
+<!-- column_layout: [1, 1] -->
+
+<!-- column: 0 -->
+
+![image:width:100%](./cnn.png)
+
+<!-- column: 1 -->
 
 ```
 Input Face (260x260)
@@ -145,15 +183,18 @@ Input Face (260x260)
     ↓
 [More Conv Layers] → Learn eye shapes, mouth curves, eyebrows
     ↓
-[Deep Layers] → Learn patterns:
-                "Raised eyebrows + wide eyes = surprised"
-                "Downturned mouth + furrowed brow = sad"
+[Deep Layers]
+    ↓
+Learn patterns:
+    "Raised eyebrows + wide eyes = surprised"
+    "Downturned mouth + furrowed brow = sad"
     ↓
 [Final Layers] → Emotion probabilities
     ↓
 Output: [Happy: 75%, Neutral: 15%, Surprised: 10%, ...]
 ```
-
+<!-- column_layout: [1] -->
+<!-- column: 0 -->
 <!-- pause -->
 
 **Why Deep Learning?**
@@ -206,9 +247,7 @@ The Complete Pipeline
 
 <!-- end_slide -->
 
-<!-- pause -->
-
-Performance Optimizations
+Performance & Accuracy Optimizations
 ---
 
 **1. Frame Skipping**
@@ -218,24 +257,81 @@ Performance Optimizations
 
 <!-- pause -->
 
-**2. Confidence Threshold**
-- Only show emotions with >35% confidence
+**2. Confidence Threshold Tuning**
+```
+Raw Model Output → Softmax → Probabilities
+[2.1, -0.5, 1.8, ...] → [0.45, 0.08, 0.32, ...]
+                              ↓
+                    Filter: Keep if > 25%
+```
+- Only show emotions with >25% confidence
 - Prevents flickering between uncertain predictions
-- More stable user experience
+- Lower threshold = better detection, higher = more stable
+
+<!-- end_slide -->
+
+Performance & Accuracy Optimizations
+---
+
+**3. Haar Cascade Parameter Tuning**
+
+The face detector scans the image at multiple scales and positions:
+
+```
+Scale Factor (1.1):
+┌────┐  ┌──────┐  ┌──────────┐
+│ 40 │→ │  44  │→ │    48    │  (Smaller steps = more thorough)
+└────┘  └──────┘  │          │
+                  └──────────┘
+```
+<!-- pause -->
+**Min Neighbors (3)**: How many overlapping detections confirm a face
+```
+
+Detection 1: ┌────┐
+Detection 2:  ┌────┐
+Detection 3:   ┌────┐   → 5 overlaps = Real face ✓
+Detection 4:    ┌────┐
+Detection 5:     ┌────┐
+```
+<!-- pause -->
+**Min Face Size (40x40)**: Smallest face to detect
+- Smaller = detects distant faces but slower
+- Larger = faster but misses small faces
+
+<!-- end_slide -->
+
+Performance & Accuracy Optimizations
+---
+
+**4. Multi-Threading Architecture**
+
+We use **3 types of threads**:
+
+```
+┌─────────────────┐         ┌──────────────────┐         ┌──────────────┐
+│   UI Thread     │         │  Worker Thread   │         │ Audio Thread │
+│  (Main/egui)    │         │  (AI Processing) │         │ (Per sound)  │
+│                 │         │                  │         │              │
+│  • Capture 30   │         │  • Receive every │         │  • Play MP3  │
+│    FPS camera   │         │    5th frame     │         │  • Auto-exit │
+│  • Render UI    │         │  • Face detect   │         │              │
+│  • Handle input │◄────────┤  • Emotion AI    ├────────►│              │
+│  • Display      │ Channel │  • Send results  │ Channel │              │
+└─────────────────┘         └──────────────────┘         └──────────────┘
+```
+
+**Thread Breakdown:**
+1. **UI Thread**: Runs continuously, handles camera + rendering + user input
+2. **Worker Thread**: Processes frames for AI (face detection + emotion recognition)
+3. **Audio Threads**: Spawned on-demand when emotion changes, plays sound then exits
 
 <!-- pause -->
 
-**3. Efficient Face Detection**
-- Tuned Haar Cascade parameters for speed
-- Min face size: 30x30 pixels
-- Scale factor: 1.1, Min neighbors: 3
-
-<!-- pause -->
-
-**4. Multi-Threading**
-- UI thread: 60 FPS rendering
-- Background thread: AI processing
-- Message channels for communication
+**Why this design?**
+- UI never blocks waiting for AI
+- Audio plays independently without blocking anything
+- Channels (mpsc + broadcast) for thread-safe communication
 
 <!-- end_slide -->
 
