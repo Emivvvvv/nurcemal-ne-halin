@@ -8,15 +8,6 @@ use opencv::objdetect::CascadeClassifier;
 use opencv::prelude::*;
 use tracing::{error, warn};
 
-/// Represents a detected face region in a frame
-#[derive(Debug, Clone)]
-pub struct FaceRegion {
-    /// Cropped face image data (grayscale)
-    pub image_data: Vec<u8>,
-    /// Height of the face region
-    pub height: u32,
-}
-
 /// Face detector using OpenCV Haar Cascade
 pub struct FaceDetector {
     classifier: CascadeClassifier,
@@ -39,8 +30,8 @@ impl FaceDetector {
         Ok(Self { classifier })
     }
 
-    /// Detects faces in the given frame and returns face regions
-    pub fn detect_faces(&mut self, frame: &Frame) -> Result<Vec<FaceRegion>> {
+    /// Detects faces in the given frame and returns face data (grayscale bytes, height)
+    pub fn detect_faces(&mut self, frame: &Frame) -> Result<Vec<(Vec<u8>, u32)>> {
         // Convert frame data to OpenCV Mat
         let mat = Mat::from_slice(&frame.data).map_err(|e| {
             EmotionDetectorError::FaceDetection(format!("Failed to create Mat: {e}"))
@@ -63,16 +54,16 @@ impl FaceDetector {
             EmotionDetectorError::FaceDetection(format!("Failed to convert to grayscale: {e}"))
         })?;
 
-        // Detect faces - optimized for speed
+        // Detect faces - balanced for accuracy
         let mut faces = Vector::<Rect>::new();
         self.classifier
             .detect_multi_scale(
                 &gray,
                 &mut faces,
-                1.2,               // scale factor (higher = faster but less accurate)
-                4,                 // min neighbors (higher = faster but may miss faces)
+                1.1,               // scale factor (lower = more accurate)
+                3,                 // min neighbors (lower = more detections)
                 0,                 // flags
-                Size::new(60, 60), // min size (larger = faster)
+                Size::new(30, 30), // min size (smaller = more detections)
                 Size::new(0, 0),   // max size (0,0 means no limit)
             )
             .map_err(|e| {
@@ -83,7 +74,7 @@ impl FaceDetector {
         let mut face_regions = Vec::new();
         for face_rect in faces.iter() {
             match self.extract_face_region(&gray, face_rect) {
-                Ok(region) => face_regions.push(region),
+                Ok((data, height)) => face_regions.push((data, height)),
                 Err(e) => {
                     warn!("Failed to extract face region: {}", e);
                     continue;
@@ -95,7 +86,7 @@ impl FaceDetector {
     }
 
     /// Extracts and crops a face region from the grayscale image
-    fn extract_face_region(&self, gray: &Mat, rect: Rect) -> Result<FaceRegion> {
+    fn extract_face_region(&self, gray: &Mat, rect: Rect) -> Result<(Vec<u8>, u32)> {
         // Crop the face region
         let face_roi = Mat::roi(gray, rect).map_err(|e| {
             EmotionDetectorError::FaceDetection(format!("Failed to crop face region: {e}"))
@@ -111,81 +102,55 @@ impl FaceDetector {
             EmotionDetectorError::FaceDetection(format!("Failed to get face data: {e}"))
         })?;
 
-        Ok(FaceRegion {
-            image_data: face_data.to_vec(),
-            height: rect.height as u32,
-        })
+        Ok((face_data.to_vec(), rect.height as u32))
     }
 }
 
-/// Preprocesses face regions for emotion classification
-pub struct FacePreprocessor {
-    target_size: (u32, u32),
-}
+/// Preprocesses a face region for model input (RGB format for HSEmotion)
+/// Returns normalized float array ready for inference
+fn preprocess_face(face_data: &[u8], face_height: u32) -> Result<Vec<f32>> {
+    // Create Mat from face data (grayscale)
+    let face_mat = Mat::from_slice(face_data).map_err(|e| {
+        EmotionDetectorError::FrameProcessing(format!("Failed to create face Mat: {e}"))
+    })?;
 
-impl FacePreprocessor {
-    /// Creates a new FacePreprocessor with target size (default 260x260 for HSEmotion model)
-    pub fn new() -> Self {
-        Self {
-            target_size: (260, 260),
-        }
-    }
+    let face_mat = face_mat.reshape(1, face_height as i32).map_err(|e| {
+        EmotionDetectorError::FrameProcessing(format!("Failed to reshape face Mat: {e}"))
+    })?;
 
-    /// Preprocesses a face region for model input (RGB format for HSEmotion)
-    /// Returns normalized float array ready for inference
-    pub fn preprocess(&self, face: &FaceRegion) -> Result<Vec<f32>> {
-        // Create Mat from face data (grayscale)
-        let face_mat = Mat::from_slice(&face.image_data).map_err(|e| {
-            EmotionDetectorError::FrameProcessing(format!("Failed to create face Mat: {e}"))
-        })?;
+    // Convert grayscale to RGB (HSEmotion expects RGB)
+    let mut rgb_mat = Mat::default();
+    opencv::imgproc::cvt_color_def(&face_mat, &mut rgb_mat, imgproc::COLOR_GRAY2RGB).map_err(
+        |e| EmotionDetectorError::FrameProcessing(format!("Failed to convert to RGB: {e}")),
+    )?;
 
-        let face_mat = face_mat.reshape(1, face.height as i32).map_err(|e| {
-            EmotionDetectorError::FrameProcessing(format!("Failed to reshape face Mat: {e}"))
-        })?;
+    // Resize to target size (260x260 for HSEmotion model)
+    let mut resized = Mat::default();
+    imgproc::resize(
+        &rgb_mat,
+        &mut resized,
+        Size::new(260, 260),
+        0.0,
+        0.0,
+        imgproc::INTER_LINEAR,
+    )
+    .map_err(|e| EmotionDetectorError::FrameProcessing(format!("Failed to resize face: {e}")))?;
 
-        // Convert grayscale to RGB (HSEmotion expects RGB)
-        let mut rgb_mat = Mat::default();
-        opencv::imgproc::cvt_color_def(&face_mat, &mut rgb_mat, imgproc::COLOR_GRAY2RGB).map_err(
-            |e| EmotionDetectorError::FrameProcessing(format!("Failed to convert to RGB: {e}")),
-        )?;
+    // Convert to float and normalize to [0, 1]
+    let data = resized.data_bytes().map_err(|e| {
+        EmotionDetectorError::FrameProcessing(format!("Failed to get resized data: {e}"))
+    })?;
 
-        // Resize to target size (260x260 for HSEmotion model)
-        let mut resized = Mat::default();
-        imgproc::resize(
-            &rgb_mat,
-            &mut resized,
-            Size::new(self.target_size.0 as i32, self.target_size.1 as i32),
-            0.0,
-            0.0,
-            imgproc::INTER_LINEAR,
-        )
-        .map_err(|e| {
-            EmotionDetectorError::FrameProcessing(format!("Failed to resize face: {e}"))
-        })?;
-
-        // Convert to float and normalize to [0, 1]
-        let data = resized.data_bytes().map_err(|e| {
-            EmotionDetectorError::FrameProcessing(format!("Failed to get resized data: {e}"))
-        })?;
-
-        let normalized: Vec<f32> = data.iter().map(|&pixel| pixel as f32 / 255.0).collect();
-        Ok(normalized)
-    }
-}
-
-impl Default for FacePreprocessor {
-    fn default() -> Self {
-        Self::new()
-    }
+    let normalized: Vec<f32> = data.iter().map(|&pixel| pixel as f32 / 255.0).collect();
+    Ok(normalized)
 }
 
 use ort::session::Session;
 use ort::value::Value;
-use std::sync::{Arc, Mutex};
 
 /// Emotion classifier using ONNX Runtime
 pub struct EmotionClassifier {
-    session: Arc<Mutex<Session>>,
+    session: Session,
 }
 
 impl EmotionClassifier {
@@ -201,15 +166,11 @@ impl EmotionClassifier {
                 EmotionDetectorError::ModelLoad(format!("ONNX model load failed: {e}"))
             })?;
 
-        let input_shape = vec![1, 3, 260, 260];
-
-        Ok(Self {
-            session: Arc::new(Mutex::new(session)),
-        })
+        Ok(Self { session })
     }
 
     /// Classifies emotion from preprocessed face data
-    pub fn classify(&self, preprocessed_face: &[f32]) -> Result<(EmotionState, f32)> {
+    pub fn classify(&mut self, preprocessed_face: &[f32]) -> Result<(EmotionState, f32)> {
         // HSEmotion expects [1, 3, 260, 260] in CHW format (channels, height, width)
         // But our preprocessed data is in HWC format (height, width, channels)
         // Need to convert from HWC to CHW
@@ -246,8 +207,7 @@ impl EmotionClassifier {
 
         // Run inference
         let inputs = ort::inputs![input_tensor];
-        let mut session = self.session.lock().unwrap();
-        let outputs = session.run(inputs).map_err(|e| {
+        let outputs = self.session.run(inputs).map_err(|e| {
             error!("ONNX inference failed: {}", e);
             EmotionDetectorError::OnnxRuntime(format!("Inference failed: {e}"))
         })?;
@@ -281,26 +241,26 @@ impl EmotionClassifier {
                 EmotionDetectorError::OnnxRuntime("No probabilities in output".to_string())
             })?;
 
-        let emotion = self.index_to_emotion(max_idx)?;
+        let emotion = index_to_emotion(max_idx);
         Ok((emotion, *max_prob))
     }
+}
 
-    /// Maps model output index to EmotionState
-    /// HSEmotion mapping: 0=Angry, 1=Disgust, 2=Fear, 3=Happy, 4=Sad, 5=Surprise, 6=Neutral, 7=Contempt
-    fn index_to_emotion(&self, index: usize) -> Result<EmotionState> {
-        match index {
-            0 => Ok(EmotionState::Angry),
-            1 => Ok(EmotionState::Disgusted),
-            2 => Ok(EmotionState::Scared),
-            3 => Ok(EmotionState::Happy),
-            4 => Ok(EmotionState::Sad),
-            5 => Ok(EmotionState::Surprised),
-            6 => Ok(EmotionState::Neutral),
-            7 => Ok(EmotionState::Disgusted), // Contempt -> map to Disgusted
-            _ => {
-                warn!("Unknown emotion index: {}, defaulting to Neutral", index);
-                Ok(EmotionState::Neutral)
-            }
+/// Maps model output index to EmotionState
+/// HSEmotion mapping: 0=Angry, 1=Disgust, 2=Fear, 3=Happy, 4=Sad, 5=Surprise, 6=Neutral, 7=Contempt
+fn index_to_emotion(index: usize) -> EmotionState {
+    match index {
+        0 => EmotionState::Angry,
+        1 => EmotionState::Disgusted,
+        2 => EmotionState::Scared,
+        3 => EmotionState::Happy,
+        4 => EmotionState::Sad,
+        5 => EmotionState::Surprised,
+        6 => EmotionState::Neutral,
+        7 => EmotionState::Disgusted, // Contempt -> map to Disgusted
+        _ => {
+            warn!("Unknown emotion index: {}, defaulting to Neutral", index);
+            EmotionState::Neutral
         }
     }
 }
@@ -309,8 +269,7 @@ use tokio::sync::broadcast;
 
 /// Main emotion analyzer that combines face detection and classification
 pub struct EmotionAnalyzer {
-    face_detector: Mutex<FaceDetector>,
-    preprocessor: FacePreprocessor,
+    face_detector: FaceDetector,
     classifier: EmotionClassifier,
     result_sender: broadcast::Sender<EmotionResult>,
     confidence_threshold: f32,
@@ -324,23 +283,20 @@ impl EmotionAnalyzer {
         result_sender: broadcast::Sender<EmotionResult>,
     ) -> Result<Self> {
         let face_detector = FaceDetector::new(cascade_path)?;
-        let preprocessor = FacePreprocessor::new();
         let classifier = EmotionClassifier::new(model_path)?;
 
         Ok(Self {
-            face_detector: Mutex::new(face_detector),
-            preprocessor,
+            face_detector,
             classifier,
             result_sender,
-            confidence_threshold: 0.5, // 50% confidence threshold for faster detection
+            confidence_threshold: 0.25, // Lower threshold for better detection
         })
     }
 
     /// Processes a frame to detect and classify emotions
-    pub async fn process_frame(&self, frame: Frame) -> Result<Option<EmotionResult>> {
+    pub async fn process_frame(&mut self, frame: Frame) -> Result<Option<EmotionResult>> {
         // Detect faces
-        let mut detector = self.face_detector.lock().unwrap();
-        let faces = match detector.detect_faces(&frame) {
+        let faces = match self.face_detector.detect_faces(&frame) {
             Ok(faces) => faces,
             Err(e) => {
                 error!("Face detection failed: {}", e);
@@ -353,10 +309,10 @@ impl EmotionAnalyzer {
         }
 
         // Process the first detected face
-        let face = &faces[0];
+        let (face_data, face_height) = &faces[0];
 
         // Preprocess face
-        let preprocessed = match self.preprocessor.preprocess(face) {
+        let preprocessed = match preprocess_face(face_data, *face_height) {
             Ok(data) => data,
             Err(e) => {
                 error!("Face preprocessing failed: {}", e);

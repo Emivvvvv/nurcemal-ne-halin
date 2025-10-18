@@ -5,8 +5,7 @@ use crate::models::Frame;
 use nokhwa::pixel_format::RgbFormat;
 use nokhwa::utils::{CameraIndex, RequestedFormat, RequestedFormatType};
 use nokhwa::Camera;
-use tokio::sync::mpsc;
-use tracing::{error, info, warn};
+use tracing::error;
 
 /// Manages camera capture and frame distribution
 pub struct CameraManager {
@@ -14,8 +13,8 @@ pub struct CameraManager {
 }
 
 impl CameraManager {
-    /// Creates a new CameraManager with the specified frame sender
-    pub fn new(frame_sender: mpsc::Sender<Frame>) -> Result<Self> {
+    /// Creates a new CameraManager
+    pub fn new() -> Result<Self> {
         // Request 640x480 at 30 FPS for better performance
         let requested_format = RequestedFormat::new::<RgbFormat>(RequestedFormatType::Closest(
             nokhwa::utils::CameraFormat::new(
@@ -42,9 +41,7 @@ impl CameraManager {
                 ))
             })?;
 
-        Ok(Self {
-            camera,
-        })
+        Ok(Self { camera })
     }
 
     /// Helper to try opening a camera at a specific index

@@ -1,7 +1,5 @@
 // Core data models for the Emotion Detector application
 
-use std::time::Instant;
-
 /// Represents a single video frame with RGB data
 #[derive(Clone, Debug)]
 pub struct Frame {

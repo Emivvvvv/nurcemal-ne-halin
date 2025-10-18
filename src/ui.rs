@@ -68,7 +68,7 @@ impl EmotionDetectorApp {
                 .map(|prev| prev.emotion != emotion.emotion)
                 .unwrap_or(true);
 
-            if let Ok(mut manager) = self.image_manager.try_lock() {
+            if let Ok(manager) = self.image_manager.try_lock() {
                 let image_data = manager.get_image_for_emotion(emotion.emotion).clone();
                 let color_image = egui::ColorImage::from_rgba_unmultiplied(
                     [image_data.width as usize, image_data.height as usize],

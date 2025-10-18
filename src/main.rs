@@ -36,24 +36,23 @@ fn main() -> Result<()> {
     init_logging()?;
 
     // Create channels
-    let (frame_sender_dummy, _) = mpsc::channel(1);
     let (frame_sender, mut frame_receiver) = mpsc::channel(20);
     let (emotion_sender, _emotion_receiver_camera) = broadcast::channel(32);
     let emotion_receiver_companion = emotion_sender.subscribe();
 
     // Initialize components
-    let mut camera_manager = CameraManager::new(frame_sender_dummy)?;
+    let mut camera_manager = CameraManager::new()?;
     if let Err(e) = camera_manager.ensure_stream_open() {
         error!("Camera initialization failed: {}", e);
     }
     #[allow(clippy::arc_with_non_send_sync)]
     let camera_manager = Arc::new(Mutex::new(camera_manager));
 
-    let emotion_analyzer = Arc::new(EmotionAnalyzer::new(
+    let mut emotion_analyzer = EmotionAnalyzer::new(
         "assets/models/haarcascade_frontalface_default.xml",
         "assets/models/emotion.onnx",
         emotion_sender.clone(),
-    )?);
+    )?;
 
     let mut image_manager = ImageManager::new("assets");
     if let Err(e) = image_manager.load_packs() {
@@ -63,17 +62,12 @@ fn main() -> Result<()> {
     let image_manager = Arc::new(Mutex::new(image_manager));
 
     // Spawn emotion processing thread
-    let latest_emotion = Arc::new(Mutex::new(None));
-    let latest_emotion_clone = latest_emotion.clone();
-    let emotion_analyzer_clone = emotion_analyzer.clone();
     std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
             while let Some(frame) = frame_receiver.recv().await {
-                if let Ok(Some(result)) = emotion_analyzer_clone.process_frame(frame).await {
-                    if let Ok(mut emotion) = latest_emotion_clone.try_lock() {
-                        *emotion = Some(result);
-                    }
+                if let Ok(Some(_result)) = emotion_analyzer.process_frame(frame).await {
+                    // Result is sent via broadcast channel in process_frame
                 }
             }
         });

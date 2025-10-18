@@ -3,12 +3,11 @@
 use crate::error::{EmotionDetectorError, Result};
 use crate::models::EmotionState;
 use image::DynamicImage;
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
+use rodio::{Decoder, OutputStream, Sink};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use tracing::warn;
 
 /// Represents decoded image data ready for display
@@ -64,11 +63,8 @@ pub struct ImageManager {
     base_dir: PathBuf,
     /// Placeholder image
     placeholder: ImageData,
-    /// Audio output stream
-    _stream: Arc<OutputStream>,
-    stream_handle: Arc<OutputStreamHandle>,
-    /// Current audio sink
-    current_sink: Option<Sink>,
+    /// Audio output stream (kept alive)
+    _stream: OutputStream,
 }
 
 impl ImageManager {
@@ -81,24 +77,17 @@ impl ImageManager {
         let placeholder = ImageData::from_dynamic_image(placeholder_img);
 
         // Initialize audio output
-        let (stream, stream_handle) = OutputStream::try_default().unwrap_or_else(|e| {
+        let (stream, _stream_handle) = OutputStream::try_default().unwrap_or_else(|e| {
             warn!("Failed to initialize audio output: {}", e);
             panic!("Audio initialization failed");
         });
-
-        #[allow(clippy::arc_with_non_send_sync)]
-        let stream_arc = Arc::new(stream);
-        #[allow(clippy::arc_with_non_send_sync)]
-        let handle_arc = Arc::new(stream_handle);
 
         Self {
             packs: Vec::new(),
             current_pack_index: 0,
             base_dir,
             placeholder,
-            _stream: stream_arc,
-            stream_handle: handle_arc,
-            current_sink: None,
+            _stream: stream,
         }
     }
 
@@ -243,21 +232,22 @@ impl ImageManager {
     }
 
     /// Plays the audio for a specific emotion from the current pack
-    pub fn play_audio_for_emotion(&mut self, emotion: EmotionState) {
-        // Stop current audio if playing
-        if let Some(sink) = self.current_sink.take() {
-            sink.stop();
-        }
-
+    pub fn play_audio_for_emotion(&self, emotion: EmotionState) {
         // Get audio path from current pack
         if let Some(pack) = self.packs.get(self.current_pack_index) {
             if let Some(audio_path) = pack.audio_paths.get(&emotion) {
                 if let Ok(file) = File::open(audio_path) {
                     let buf_reader = BufReader::new(file);
                     if let Ok(source) = Decoder::new(buf_reader) {
-                        let sink = Sink::try_new(&self.stream_handle).unwrap();
-                        sink.append(source);
-                        sink.detach();
+                        // Play audio in a separate thread (fire and forget)
+                        std::thread::spawn(move || {
+                            if let Ok((_stream, handle)) = OutputStream::try_default() {
+                                if let Ok(sink) = Sink::try_new(&handle) {
+                                    sink.append(source);
+                                    sink.sleep_until_end();
+                                }
+                            }
+                        });
                     }
                 }
             }
