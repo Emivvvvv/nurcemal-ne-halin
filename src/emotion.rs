@@ -61,9 +61,9 @@ impl FaceDetector {
                 &gray,
                 &mut faces,
                 1.1,               // scale factor (lower = more accurate)
-                3,                 // min neighbors (lower = more detections)
+                5,                 // min neighbors (lower = more detections)
                 0,                 // flags
-                Size::new(30, 30), // min size (smaller = more detections)
+                Size::new(40, 40), // min size (smaller = more detections)
                 Size::new(0, 0),   // max size (0,0 means no limit)
             )
             .map_err(|e| {
