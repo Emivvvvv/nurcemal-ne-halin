@@ -262,9 +262,9 @@ Performance & Accuracy Optimizations
 Raw Model Output → Softmax → Probabilities
 [2.1, -0.5, 1.8, ...] → [0.45, 0.08, 0.32, ...]
                               ↓
-                    Filter: Keep if > 25%
+                    Filter: Keep if > 30%
 ```
-- Only show emotions with >25% confidence
+- Only show emotions with >30% confidence
 - Prevents flickering between uncertain predictions
 - Lower threshold = better detection, higher = more stable
 

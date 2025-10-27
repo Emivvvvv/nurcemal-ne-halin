@@ -289,7 +289,7 @@ impl EmotionAnalyzer {
             face_detector,
             classifier,
             result_sender,
-            confidence_threshold: 0.25, // Lower threshold for better detection
+            confidence_threshold: 0.35, // Lower threshold for better detection
         })
     }
 
